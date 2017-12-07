@@ -1478,7 +1478,12 @@
                     });
                     html = $div.html();
                     html = html.replace(/<img(.*?[^>])rel="(.*?[^>])"(.*?[^>])>/gi, '<img$1$3>');
-                    html = html.replace(/<span class="redactor-invisible-space">(.*?)<\/span>/gi, '$1');
+
+                    var regexp_invisible = /<span class="redactor-invisible-space">(.*?)<\/span>/gi
+                    while (html.search(regexp_invisible) >= 0) {
+                        html = html.replace(regexp_invisible, '$1');
+                    }
+
                     html = html.replace(/ data-save-url="(.*?[^>])"/gi, '');
                     html = html.replace(/<span(.*?)id="redactor-image-box"(.*?[^>])>([\w\W]*?)<img(.*?)><\/span>/gi, '$3<img$4>');
                     html = html.replace(/<span(.*?)id="redactor-image-resizer"(.*?[^>])>(.*?)<\/span>/gi, '');
@@ -4822,22 +4827,23 @@
                     this.selection.save();
                     this.utils.saveScroll();
                     this.paste.createPasteBox();
+                },
+                copy: function() {
                     $(window).on('scroll.redactor-freeze', $.proxy(function() {
                         $(window).scrollTop(this.saveBodyScroll)
                     }, this));
-                    setTimeout($.proxy(function() {
-                        var html = this.$pasteBox.html();
-                        this.$pasteBox.remove();
-                        this.selection.restore();
-                        this.utils.restoreScroll();
-                        this.paste.insert(html);
-                        $(window).off('scroll.redactor-freeze');
-                        if (this.linkify.isEnabled())
-                            this.linkify.format()
-                    }, this), 1)
+
+                    var html = this.$pasteBox.html();
+                    this.$pasteBox.remove();
+                    this.selection.restore();
+                    this.utils.restoreScroll();
+                    this.paste.insert(html);
+                    $(window).off('scroll.redactor-freeze');
+                    if (this.linkify.isEnabled())
+                        this.linkify.format()
                 },
                 createPasteBox: function() {
-                    this.$pasteBox = $('<div>').html('').attr('contenteditable', 'true').css({
+                    this.$pasteBox = $('<div id="pasteBox">').html('').attr('contenteditable', 'true').css({
                         position: 'fixed',
                         width: 0,
                         top: 0,
@@ -4852,7 +4858,37 @@
                             $('body').append(this.$pasteBox)
                         }
                     }
-                    this.$pasteBox.focus()
+                    
+                    // paste images fix
+                    // based on work by: http://codecorner.galanter.net/2017/09/11/copypaste-image-into-an-editable-dom-element-in-chrome/
+                    var me = window;
+                    var items = (event.clipboardData || event.originalEvent.clipboardData).items;
+                    var blob = null;
+                    for (var i = 0; i < items.length; i++) {
+                        if (items[i].type.indexOf("image") === 0) {
+                            blob = items[i].getAsFile();
+                            break;
+                        }
+                    }
+
+                    this.$pasteBox.focus();
+
+                    if (blob !== null) {
+                        // an image was pasted
+                        var reader = new FileReader();
+                        reader.onload = $.proxy(function (event) {
+                            var image = new Image();
+                            image.src = event.target.result;
+
+                            image.onload = $.proxy(function () {
+                                $('#pasteBox').append(image);
+                                this.paste.copy();
+                            }, this);
+                        }, this);
+                        reader.readAsDataURL(blob);
+                    } else {
+                        setTimeout($.proxy(this.paste.copy, this), 1);
+                    }
                 },
                 insert: function(html) {
                     html = this.core.setCallback('pasteBefore', html);
